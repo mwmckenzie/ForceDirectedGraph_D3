@@ -1,0 +1,235 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Force Directed Graph with D3.js">
+  <title>Force Directed Graph</title>
+  <script src="js/d3/d3.v7.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      background-color: #f8f9fa;
+    }
+  </style>
+</head>
+<body>
+<div id="chart"></div>
+
+<script>
+  
+  const data = {
+    "name": "Equipment",
+    "children": [
+      {
+        "name": "Vehicle",
+        "children": [
+          {
+            "name": "Airborne Vehicle",
+            "children": [
+              {
+                "name": "Fixed-wing",
+                "children": [
+                  {
+                    "name": "Fighter Jet",
+                    "children": [
+                      { "name": "Stealth Fighter", "value": 50.0 },
+                      { "name": "Interceptor", "value": 50.0 }
+                    ]
+                  },
+                  { "name": "Bomber Jet", "value": 16.67 },
+                  { "name": "Attack Jet", "value": 16.67 },
+                  { "name": "Drone", "value": 16.67 },
+                  { "name": "Cargo Jet", "value": 16.67 },
+                  {
+                    "name": "Passenger Jet",
+                    "children": [
+                      { "name": "Private Jet", "value": 50.0 },
+                      { "name": "Regional Jet", "value": 50.0 }
+                    ]
+                  }
+                ]
+              },
+              {
+                "name": "Rotary-wing",
+                "children": [
+                  {
+                    "name": "Helicopter",
+                    "children": [
+                      { "name": "Rescue Helicopter", "value": 33.33 },
+                      { "name": "Cargo Helicopter", "value": 33.33 },
+                      { "name": "Attack Helicopter", "value": 33.33 }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "Ground Vehicle",
+            "children": [
+              { "name": "Wheel-based", "value": 33.33 },
+              {
+                "name": "Tread-based",
+                "children": [
+                  {
+                    "name": "Tank",
+                    "children": [
+                      { "name": "Light Tank", "value": 50.0 },
+                      { "name": "Heavy Tank", "value": 50.0 }
+                    ]
+                  },
+                  {
+                    "name": "APC",
+                    "children": [
+                      { "name": "Amphibious APC", "value": 100.0 }
+                    ]
+                  }
+                ]
+              },
+              {
+                "name": "Air-Cushioned",
+                "children": [
+                  {
+                    "name": "Amphibious Vehicle",
+                    "children": [
+                      { "name": "Hovercraft", "value": 100.0 }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "Maritime Vehicle",
+            "children": [
+              {
+                "name": "Submarine",
+                "children": [
+                  { "name": "Missile Submarine", "value": 100.0 }
+                ]
+              },
+              {
+                "name": "Destroyer",
+                "children": [
+                  { "name": "Patrol Boat", "value": 50.0 },
+                  { "name": "Battleship", "value": 50.0 }
+                ]
+              },
+              {
+                "name": "Cruiser",
+                "children": [
+                  { "name": "Cruise Ship", "value": 50.0 },
+                  { "name": "Luxury Yacht", "value": 50.0 }
+                ]
+              },
+              { "name": "Jet Ski", "value": 20.0 },
+              { "name": "Fishing Boat", "value": 20.0 }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+
+  // Specify the chart’s dimensions.
+  //const width = window.screen.width;
+  const width = window.screen.height;
+  const height = window.screen.height;
+
+  // Create the color scale.
+  const color = d3.scaleLinear()
+          .domain([0, 5])
+          .range(["hsl(152,80%,80%)", "hsl(228,30%,40%)"])
+          .interpolate(d3.interpolateHcl);
+
+  // Compute the layout.
+  const pack = data => d3.pack()
+          .size([width, height])
+          .padding(3)
+          (d3.hierarchy(data)
+                  .sum(d => d.value)
+                  .sort((a, b) => b.value - a.value));
+  const root = pack(data);
+
+  // Create the SVG container.
+  const svg = d3.select("#chart").append("svg")
+          .attr("viewBox", `-${width / 2} -${height / 2} ${width} ${height}`)
+          .attr("width", width)
+          .attr("height", height)
+          .attr("style", `max-width: 100%; height: auto; display: block; margin: 0 -14px; background: ${color(0)}; cursor: pointer;`);
+
+  // Append the nodes.
+  const node = svg.append("g")
+          .selectAll("circle")
+          .data(root.descendants().slice(1))
+          .join("circle")
+          .attr("fill", d => d.children ? color(d.depth) : "white")
+          .attr("pointer-events", d => !d.children ? "none" : null)
+          .on("mouseover", function() { d3.select(this).attr("stroke", "#000"); })
+          .on("mouseout", function() { d3.select(this).attr("stroke", null); })
+          .on("click", (event, d) => focus !== d && (zoom(event, d), event.stopPropagation()));
+
+  // Append the text labels.
+  const label = svg.append("g")
+          .style("font", "10px sans-serif")
+          .attr("pointer-events", "none")
+          .attr("text-anchor", "middle")
+          .selectAll("text")
+          .data(root.descendants())
+          .join("text")
+          .style("fill-opacity", d => d.parent === root ? 1 : 0)
+          .style("display", d => d.parent === root ? "inline" : "none")
+          .text(d => d.data.name);
+
+  // Create the zoom behavior and zoom immediately in to the initial focus node.
+  svg.on("click", (event) => zoom(event, root));
+  let focus = root;
+  let view;
+  zoomTo([focus.x, focus.y, focus.r * 2]);
+
+  function zoomTo(v) {
+    const k = width / v[2];
+
+    view = v;
+
+    label.attr("transform", d => `translate(${(d.x - v[0]) * k},${(d.y - v[1]) * k})`);
+    node.attr("transform", d => `translate(${(d.x - v[0]) * k},${(d.y - v[1]) * k})`);
+    node.attr("r", d => d.r * k);
+  }
+
+  function zoom(event, d) {
+    const focus0 = focus;
+
+    focus = d;
+
+    const transition = svg.transition()
+            .duration(event.altKey ? 7500 : 750)
+            .tween("zoom", d => {
+              const i = d3.interpolateZoom(view, [focus.x, focus.y, focus.r * 2]);
+              return t => zoomTo(i(t));
+            });
+
+    label
+            .filter(function (d) {
+              return d.parent === focus || this.style.display === "inline";
+            })
+            .transition(transition)
+            .style("fill-opacity", d => d.parent === focus ? 1 : 0)
+            .on("start", function (d) {
+              if (d.parent === focus) this.style.display = "inline";
+            })
+            .on("end", function (d) {
+              if (d.parent !== focus) this.style.display = "none";
+            });
+  }
+  
+</script>
+</body>
+</html>
