@@ -1,0 +1,166 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Force Directed Graph with D3.js">
+    <title>Force Directed Graph</title>
+    <script src="js/d3/d3.v7.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f8f9fa;
+        }
+    </style>
+</head>
+<body>
+<div id="chart"></div>
+
+<script>
+    const data = {
+    nodes : [
+        { id: "Vehicle", group: "0" },
+        { id: "Airborne Vehicle",  group: "1" },
+        { id: "Ground Vehicle",  group: "1" },
+        { id: "Maritime Vehicle",  group: "2" },
+        { id: "Fixed-wing",  group: "3" },
+        { id: "Rotary-wing",  group: "3" },
+        { id: "Wheel-based",  group: "3" },
+        { id: "Tread-based",  group: "3" },
+        { id: "Air-Cushioned",  group: "3" },
+        { id: "Fighter Jet",  group: "4" },
+        { id: "Bomber Jet",  group: "4" },
+        { id: "Attack Jet",  group: "4" },
+    ], 
+    links: [
+        { source: "Vehicle", target: "Equipment", type: "subClassOf", value: "0" },
+        { source: "Airborne Vehicle", target: "Vehicle", type: "subClassOf", value: "1" },
+        { source: "Ground Vehicle", target: "Vehicle", type: "subClassOf", value: "1" },
+        { source: "Maritime Vehicle", target: "Vehicle", type: "subClassOf", value: "2" },
+        { source: "Fixed-wing", target: "Airborne Vehicle", type: "subClassOf", value: "3" },
+        { source: "Rotary-wing", target: "Airborne Vehicle", type: "subClassOf", value: "3" },
+        { source: "Wheel-based", target: "Ground Vehicle", type: "subClassOf", value: "3" },
+        { source: "Tread-based", target: "Ground Vehicle", type: "subClassOf", value: "3" },
+        { source: "Air-Cushioned", target: "Ground Vehicle", type: "subClassOf", value: "3" },
+        { source: "Fighter Jet", target: "Fixed-wing", type: "subClassOf", value: "4" },
+        { source: "Bomber Jet", target: "Fixed-wing", type: "subClassOf", value: "4" },
+        { source: "Attack Jet", target: "Fixed-wing", type: "subClassOf", value: "4" },
+    ]};
+
+    function linkArc(d) {
+        const r = Math.hypot(d.target.x - d.source.x, d.target.y - d.source.y);
+        return `
+                M${d.source.x},${d.source.y}
+                A${r},${r} 0 0,1 ${d.target.x},${d.target.y}
+            `;
+    }
+
+    function drag(simulation) {
+        function dragStarted(event, d) {
+            if (!event.active) simulation.alphaTarget(0.3).restart();
+            d.fx = d.x;
+            d.fy = d.y;
+        }
+
+        function dragged(event, d) {
+            d.fx = event.x;
+            d.fy = event.y;
+        }
+
+        function dragEnded(event, d) {
+            if (!event.active) simulation.alphaTarget(0);
+            d.fx = null;
+            d.fy = null;
+        }
+
+        return d3.drag()
+            .on("start", dragStarted)
+            .on("drag", dragged)
+            .on("end", dragEnded);
+    }
+
+    const width = 928;
+    const height = 600;
+    const color = d3.scaleOrdinal(d3.schemeCategory10);
+
+    // The force simulation mutates links and nodes, so create a copy
+    // so that re-evaluating this cell produces the same result.
+    const links = data.links.map(d => ({...d}));
+    const nodes = data.nodes.map(d => ({...d}));
+    
+    const types = Array.from(new Set(suits.map(d => d.level)));
+    const nodes = Array.from(new Set(suits.flatMap(l => [l.source, l.target])), id => ({ id }));
+    const links = suits.map(d => Object.create(d));
+
+
+    const simulation = d3.forceSimulation(nodes)
+        .force("link", d3.forceLink(links).id(d => d.id))
+        .force("charge", d3.forceManyBody().strength(-400))
+        .force("x", d3.forceX())
+        .force("y", d3.forceY());
+
+    const svg = d3.select("#chart").append("svg")
+        .attr("viewBox", [-width / 2, -height / 2, width, height])
+        .attr("width", width)
+        .attr("height", height)
+        .attr("style", "max-width: 100%; height: auto; font: 12px sans-serif;");
+
+    svg.append("defs").selectAll("marker")
+        .data(types)
+        .join("marker")
+        .attr("id", d => `arrow-${d}`)
+        .attr("viewBox", "0 -5 10 10")
+        .attr("refX", 15)
+        .attr("refY", -0.5)
+        .attr("markerWidth", 6)
+        .attr("markerHeight", 6)
+        .attr("orient", "auto")
+        .append("path")
+        .attr("fill", color)
+        .attr("d", "M0,-5L10,0L0,5");
+
+    const link = svg.append("g")
+        .attr("fill", "none")
+        .attr("stroke-width", 1.5)
+        .selectAll("path")
+        .data(links)
+        .join("path")
+        .attr("stroke", d => color(d.type))
+        .attr("marker-end", d => `url(#arrow-${d.type})`);
+
+    const node = svg.append("g")
+        .attr("fill", "currentColor")
+        .attr("stroke-linecap", "round")
+        .attr("stroke-linejoin", "round")
+        .selectAll("g")
+        .data(nodes)
+        .join("g")
+        .call(drag(simulation));
+
+    node.append("circle")
+        .attr("stroke", "white")
+        .attr("stroke-width", 1.5)
+        .attr("r", 4);
+
+    node.append("text")
+        .attr("x", 8)
+        .attr("y", "0.31em")
+        .text(d => d.id)
+        .clone(true).lower()
+        .attr("fill", "none")
+        .attr("stroke", "white")
+        .attr("stroke-width", 3);
+
+    simulation.on("tick", () => {
+        link.attr("d", linkArc);
+        node.attr("transform", d => `translate(${d.x},${d.y})`);
+    });
+</script>
+</body>
+</html>

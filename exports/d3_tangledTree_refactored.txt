@@ -1,0 +1,269 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Expanding Hierarchy Graph with D3.js">
+    <title>Force Directed Graph</title>
+    <script src="js/d3/d3.v7.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f8f9fa;
+        }
+    </style>
+</head>
+<body>
+<div id="chart"></div>
+<div id="output"></div>
+<script>
+
+    let data = null;
+
+    //const _ = require("lodash")
+    const _ = null;
+    const color = d3.scaleOrdinal(d3.schemeDark2);
+    const background_color = 'white';
+    
+    // Default color function
+    const defaultColor = (d, i) => color(i);
+
+    // Function to set up the SVG element
+    function createSVG(containerId, width, height, backgroundColor) {
+        return d3
+            .select(containerId)
+            .append("svg")
+            .attr("width", width)
+            .attr("height", height)
+            .style("background-color", backgroundColor);
+    }
+
+    // Function to generate paths for the bundles
+    function generateBundlePaths(bundles, colorFunc, backgroundColor) {
+        return bundles
+            .map((b, i) => {
+                let d = b.links
+                    .map(
+                        (l) => `
+            M${l.xt} ${l.yt}
+            L${l.xb - l.c1} ${l.yt}
+            A${l.c1} ${l.c1} 90 0 1 ${l.xb} ${l.yt + l.c1}
+            L${l.xb} ${l.ys - l.c2}
+            A${l.c2} ${l.c2} 90 0 0 ${l.xb + l.c2} ${l.ys}
+            L${l.xs} ${l.ys}`
+                    )
+                    .join("");
+
+                return `
+        <path class="link" d="${d}" stroke="${backgroundColor}" stroke-width="5"/>
+        <path class="link" d="${d}" stroke="${colorFunc(b, i)}" stroke-width="2"/>
+      `;
+            })
+            .join("");
+    }
+
+    // Function to generate paths for the nodes
+    function generateNodePaths(nodes, backgroundColor) {
+        return nodes
+            .map(
+                (n) => `
+        <path class="selectable node" data-id="${n.id}" stroke="black" stroke-width="8"
+              d="M${n.x} ${n.y - n.height / 2} L${n.x} ${n.y + n.height / 2}"/>
+        <path class="node" stroke="white" stroke-width="4"
+              d="M${n.x} ${n.y - n.height / 2} L${n.x} ${n.y + n.height / 2}"/>
+
+        <text class="selectable" data-id="${n.id}" x="${n.x + 4}" y="${n.y - n.height / 2 - 4}"
+              stroke="${backgroundColor}" stroke-width="2">${n.id}</text>
+        <text x="${n.x + 4}" y="${n.y - n.height / 2 - 4}" style="pointer-events: none;">${n.id}</text>
+      `
+            )
+            .join("");
+    }
+
+    // Function to render the chart
+    function renderChart(data, options = {}) {
+        // Set default color function if not provided
+        options.color ||= defaultColor;
+
+        // Construct tangle layout
+        const tangleLayout = constructTangleLayout(data, options);
+
+        // Create SVG element
+        const backgroundColor = options.backgroundColor || "#fff";
+        const svg = createSVG("#chart", tangleLayout.layout.width, tangleLayout.layout.height, backgroundColor);
+
+        // Generate paths for bundles and nodes
+        const bundlePaths = generateBundlePaths(tangleLayout.bundles, options.color, backgroundColor);
+        const nodePaths = generateNodePaths(tangleLayout.nodes, backgroundColor);
+
+        // Append the generated SVG content
+        svg.html(`
+    <style>
+      text {
+        font-family: sans-serif;
+        font-size: 10px;
+      }
+      .node {
+        stroke-linecap: round;
+      }
+      .link {
+        fill: none;
+      }
+    </style>
+
+    ${bundlePaths}
+    ${nodePaths}
+  `);
+
+        return svg;
+    }
+
+    // Precompute the level depth for each node
+    function assignNodeLevels(levels) {
+        levels.forEach((level, i) => level.forEach(node => (node.level = i)));
+    }
+
+    // Flatten the levels into a single array of nodes
+    function flattenNodes(levels) {
+        return levels.reduce((acc, level) => acc.concat(level), []);
+    }
+
+    // Create an index of nodes by their IDs
+    function createNodeIndex(nodes) {
+        const nodeIndex = {};
+        nodes.forEach(node => (nodeIndex[node.id] = node));
+        return nodeIndex;
+    }
+
+    // Assign parent nodes to each node based on the index
+    function assignParents(nodes, nodeIndex) {
+        nodes.forEach(node => {
+            node.parents = (node.parents || []).map(parentId => nodeIndex[parentId]);
+        });
+    }
+
+    // Precompute bundles for each level
+    function computeBundlesForLevels(levels) {
+        levels.forEach((level, i) => {
+            const index = {};
+
+            level.forEach(node => {
+                if (node.parents.length === 0) return;
+
+                // Create a unique bundle ID by combining parent IDs
+                const id = node.parents
+                    .map(parent => parent.id)
+                    .sort()
+                    .join('-X-');
+
+                if (index[id]) {
+                    index[id].parents = index[id].parents.concat(node.parents);
+                } else {
+                    index[id] = {
+                        id: id,
+                        parents: node.parents.slice(),
+                        level: i,
+                        span: i - d3.min(node.parents, parent => parent.level),
+                    };
+                }
+
+                node.bundle = index[id];
+            });
+
+            // Assign bundles to the level
+            level.bundles = Object.values(index);
+            level.bundles.forEach((bundle, i) => (bundle.i = i));
+        });
+    }
+
+    // Create links between nodes and their parents
+    function createLinks(nodes) {
+        const links = [];
+        nodes.forEach(node => {
+            node.parents.forEach(parent =>
+                links.push({ source: node, bundle: node.bundle, target: parent })
+            );
+        });
+        return links;
+    }
+
+    // Collect bundles from all levels
+    function collectBundles(levels) {
+        return levels.reduce((acc, level) => acc.concat(level.bundles), []);
+    }
+
+    // Add reverse pointers from parents to their bundles
+    function addReverseBundlePointers(bundles) {
+        bundles.forEach(bundle => {
+            bundle.parents.forEach(parent => {
+                parent.bundles_index ||= {};
+                parent.bundles_index[bundle.id] ||= [];
+                parent.bundles_index[bundle.id].push(bundle);
+            });
+        });
+    }
+
+    // Finalize node bundles by sorting and assigning indices
+    function finalizeNodeBundles(nodes) {
+        nodes.forEach(node => {
+            node.bundles = node.bundles_index
+                ? Object.values(node.bundles_index)
+                : [];
+
+            node.bundles.sort((a, b) =>
+                d3.descending(d3.max(a, d => d.span), d3.max(b, d => d.span))
+            );
+
+            node.bundles.forEach((bundle, i) => (bundle.i = i));
+        });
+    }
+
+    // Assign links to bundles
+    function assignLinksToBundles(links) {
+        links.forEach(link => {
+            link.bundle.links ||= [];
+            link.bundle.links.push(link);
+        });
+    }
+
+    // Main function to construct the tangle layout
+    function constructTangleLayout(levels, options = {}) {
+        assignNodeLevels(levels);
+        const nodes = flattenNodes(levels);
+        const nodeIndex = createNodeIndex(nodes);
+        assignParents(nodes, nodeIndex);
+        computeBundlesForLevels(levels);
+
+        const links = createLinks(nodes);
+        const bundles = collectBundles(levels);
+
+        addReverseBundlePointers(bundles);
+        finalizeNodeBundles(nodes);
+        assignLinksToBundles(links);
+
+        return { nodes, links, bundles, layout: options.layout || {} };
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+
+        let response = await fetch('data/data_tangled_tree.json');
+        if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+
+        data = await response.json();
+
+        console.log(data);
+
+        //await draw();
+        renderChart(data);
+
+    });
+
+</script>
+</body>
+</html>

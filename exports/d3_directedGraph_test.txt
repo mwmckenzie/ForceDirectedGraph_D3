@@ -1,0 +1,226 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Force Directed Graph with D3.js">
+    <title>Force Directed Graph</title>
+    <script src="js/d3/d3.v7.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f8f9fa;
+        }
+    </style>
+</head>
+<body>
+<div id="chart"></div>
+
+<script>
+    const suits = [
+        {source: "Vehicle", target: "Equipment", type: "subClassOf", level: "0"},
+        {source: "Airborne Vehicle", target: "Vehicle", type: "subClassOf", level: "1"},
+        {source: "Ground Vehicle", target: "Vehicle", type: "subClassOf", level: "1"},
+        {source: "Maritime Vehicle", target: "Vehicle", type: "subClassOf", level: "2"},
+        {source: "Fixed-wing", target: "Airborne Vehicle", type: "subClassOf", level: "3"},
+        {source: "Rotary-wing", target: "Airborne Vehicle", type: "subClassOf", level: "3"},
+        {source: "Wheel-based", target: "Ground Vehicle", type: "subClassOf", level: "3"},
+        {source: "Tread-based", target: "Ground Vehicle", type: "subClassOf", level: "3"},
+        {source: "Air-Cushioned", target: "Ground Vehicle", type: "subClassOf", level: "3"},
+        {source: "Fighter Jet", target: "Fixed-wing", type: "subClassOf", level: "4"},
+        {source: "Bomber Jet", target: "Fixed-wing", type: "subClassOf", level: "4"},
+        {source: "Attack Jet", target: "Fixed-wing", type: "subClassOf", level: "4"},
+    ];
+
+    function linkArc(d) {
+        const r = Math.hypot(d.target.x - d.source.x, d.target.y - d.source.y);
+        return `
+                M${d.source.x},${d.source.y}
+                A${r},${r} 0 0,1 ${d.target.x},${d.target.y}
+            `;
+    }
+
+    function drag(simulation) {
+        function dragStarted(event, d) {
+            if (!event.active) simulation.alphaTarget(0.3).restart();
+            d.fx = d.x;
+            d.fy = d.y;
+        }
+
+        function dragged(event, d) {
+            d.fx = event.x;
+            d.fy = event.y;
+        }
+
+        function dragEnded(event, d) {
+            if (!event.active) simulation.alphaTarget(0);
+            d.fx = null;
+            d.fy = null;
+        }
+
+        return d3.drag()
+            .on("start", dragStarted)
+            .on("drag", dragged)
+            .on("end", dragEnded);
+    }
+
+    
+
+    //const width = 928;
+    //const height = 600;
+    const types = Array.from(new Set(suits.map(d => d.level)));
+    const nodes = Array.from(new Set(suits.flatMap(l => [l.source, l.target])), id => ({id}));
+    const links = suits.map(d => Object.create(d));
+
+    var width = window.screen.width;
+    var height = window.screen.height;
+
+
+    //const color = d3.scaleOrdinal(types, d3.schemeCategory10);
+    const color = d3.scaleOrdinal(d3.schemeCategory10);
+
+    const simulation = d3.forceSimulation(nodes)
+        .force("link", d3.forceLink(links).id(d => d.id))
+        .force("charge", d3.forceManyBody().strength(-400))
+        .force("x", d3.forceX())
+        .force("y", d3.forceY());
+
+    const svg = d3.select("#chart").append("svg")
+        .attr("id", "svg-id")
+        .attr("viewBox", [-width / 2, -height / 2, width, height])
+        .attr("width", width)
+        .attr("height", height)
+        .attr("style", "max-width: 100%; height: auto; font: 12px sans-serif;")
+        ;
+
+    svg.append("defs").selectAll("marker")
+        .data(types)
+        .join("marker")
+        .attr("id", d => `arrow-${d}`)
+        .attr("viewBox", "0 -5 10 10")
+        .attr("refX", 15)
+        .attr("refY", -0.5)
+        .attr("markerWidth", 6)
+        .attr("markerHeight", 6)
+        .attr("orient", "auto")
+        .append("path")
+        .attr("fill", color)
+        .attr("d", "M0,-5L10,0L0,5");
+
+    const link = svg.append("g")
+        .attr("fill", "none")
+        .attr("stroke-width", 1.5)
+        .selectAll("path")
+        .data(links)
+        .join("path")
+        .attr("stroke", d => color(d.type))
+        .attr("marker-end", d => `url(#arrow-${d.type})`)
+        .attr("id", "mainGroup");
+
+    const node = svg.append("g")
+        .attr("fill", "currentColor")
+        .attr("stroke-linecap", "round")
+        .attr("stroke-linejoin", "round")
+        .selectAll("g")
+        .data(nodes)
+        .join("g")
+        .call(drag(simulation));
+
+    node.append("circle")
+        .attr("stroke", "white")
+        .attr("stroke-width", 1.5)
+        .attr("r", 4);
+
+    node.append("text")
+        .attr("x", 8)
+        .attr("y", "0.31em")
+        .text(d => d.id)
+        .clone(true).lower()
+        .attr("fill", "none")
+        .attr("stroke", "white")
+        .attr("stroke-width", 3);
+
+    simulation.on("tick", () => {
+        link.attr("d", linkArc);
+        node.attr("transform", d => `translate(${d.x},${d.y})`);
+    });
+
+    // z holds a copy of the previous transform, so we can track its changes
+    let z = d3.zoomIdentity;
+
+    // set up the ancillary zooms and an accessor for their transforms
+    const zoomX = d3.zoom().scaleExtent([0.1, 10]);
+    const zoomY = d3.zoom().scaleExtent([0.2, 5]);
+    const tx = () => d3.zoomTransform(link.node());
+    const ty = () => d3.zoomTransform(node.node());
+    link.call(zoomX).attr("pointer-events", "none");
+    node.call(zoomY).attr("pointer-events", "none");
+
+    // active zooming
+    const zoom = d3.zoom().on("zoom", function(e) {
+
+        let x = d3.scaleLinear()
+            .domain([30, width - 10])
+            .range([30, width - 10])
+            .nice();
+        
+        let y = d3.scaleLinear()
+            .domain([height - 20, 10])
+            .range([height - 20, 10])
+            .nice();
+        
+        let xAxis = (g, scale) => g
+            .attr("transform", `translate(0,${y(0)})`)
+            .call(d3.axisBottom(scale).ticks(12))
+            .call(g => g.select(".domain").attr("display", "none"));
+        
+        let yAxis = (g, scale) => g
+            .attr("transform", `translate(${x(0)},0)`)
+            .call(d3.axisLeft(scale).ticks(12 * (height / width)))
+            .call(g => g.select(".domain").attr("display", "none"));
+        
+        const t = e.transform;
+        const k = t.k / z.k;
+        const point = center(e, this);
+
+        // is it on an axis? is the shift key pressed?
+        const doX = point[0] > x.range()[0];
+        const doY = point[1] < y.range()[0];
+        const shift = e.sourceEvent && e.sourceEvent.shiftKey;
+
+        if (k === 1) {
+            // pure translation?
+            doX && link.call(zoomX.translateBy, (t.x - z.x) / tx().k, 0);
+            doY && node.call(zoomY.translateBy, 0, (t.y - z.y) / ty().k);
+        } else {
+            // if not, we're zooming on a fixed point
+            doX && link.call(zoomX.scaleBy, shift ? 1 / k : k, point);
+            doY && node.call(zoomY.scaleBy, k, point);
+        }
+
+        z = t;
+    });
+    
+    svg.call(zoom)
+        .call(zoom.transform, d3.zoomIdentity.scale(0.8));
+
+    // center the action (handles multitouch)
+    function center(event, target) {
+        if (event.sourceEvent) {
+            const p = d3.pointers(event, target);
+            return [d3.mean(p, d => d[0]), d3.mean(p, d => d[1])];
+        }
+        return [width / 2, height / 2];
+    }
+
+    
+    
+</script>
+</body>
+</html>
