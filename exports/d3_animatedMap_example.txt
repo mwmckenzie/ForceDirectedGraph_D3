@@ -1,0 +1,152 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Expanding Hierarchy Graph with D3.js">
+    <title>D3 Animated Map Example</title>
+    <script src="js/d3/d3.v7.js"></script>
+    <script src="js/topojson/topojson.js"></script>
+</head>
+<body>
+<div style="margin-top: 100px; margin-left: 100px; margin-right: 100px; margin-bottom: 100px;">
+    <div id="chart"></div>
+</div>
+<div id="output"></div>
+
+<script>
+    
+
+    const projection = d3.geoAlbersUsa().scale(1280).translate([480, 300])
+    const parseDate = d3.utcParse("%m/%d/%Y")
+    
+    let date_index = 0;
+
+    function renderChart(us, point_data) {
+
+        
+        const svg = d3.select("#chart").append("svg")
+            .attr("viewBox", [0, 0, 960, 600]);
+
+        svg.append("path")
+            .datum(topojson.merge(us, us.objects.lower48.geometries))
+            .attr("fill", "#ddd")
+            .attr("d", d3.geoPath());
+
+        svg.append("path")
+            .datum(topojson.mesh(us, us.objects.lower48, (a, b) => a !== b))
+            .attr("fill", "none")
+            .attr("stroke", "white")
+            .attr("stroke-linejoin", "round")
+            .attr("d", d3.geoPath());
+
+        const g = svg.append("g")
+            .attr("fill", "none")
+            .attr("stroke", "black");
+
+        const dot = g.selectAll("circle")
+            .data(point_data)
+            .join("circle")
+            .attr("transform", d => `translate(${d})`);
+
+        svg.append("circle")
+            .attr("fill", "blue")
+            .attr("transform", `translate(${point_data[0]})`)
+            .attr("r", 3);
+
+        let previousDate = -Infinity;
+        
+
+        const zoom = d3.zoom().on("zoom", function (e) {
+
+            Object.assign(svg.node(), {
+                update(date) {
+                    dot // enter
+                        .filter(d => d.date > previousDate && d.date <= date)
+                        .transition().attr("r", 3);
+                    dot // exit
+                        .filter(d => d.date <= previousDate && d.date > date)
+                        .transition().attr("r", 0);
+                    previousDate = date;
+                }
+            });
+
+            
+            const date = e.sourceEvent['deltaY'] > 0 ? 
+                point_data[date_index++].date :
+                date_index > 0 ? point_data[date_index--].date : point_data[date_index].date;
+            
+            svg.node().update(date);
+            
+            
+        });
+
+        svg.call(zoom)
+            .call(zoom.transform, d3.zoomIdentity.scale(0.8))
+            .node();
+
+        return Object.assign(svg.node(), {
+            update(date) {
+                dot // enter
+                    .filter(d => d.date > previousDate && d.date <= date)
+                    .transition().attr("r", 3);
+                dot // exit
+                    .filter(d => d.date <= previousDate && d.date > date)
+                    .transition().attr("r", 0);
+                previousDate = date;
+            }
+        });
+        
+        
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+
+        let response = await fetch('data/us_atlas_states_10m.json');
+        if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+
+        //data = d3.csvParseRows(await response)
+
+        const json_data = await response.json();
+        //console.log(json_data);
+
+        const us_json = await d3.json('data/us_atlas_states_10m.json');
+        
+        console.log(us_json);
+
+        const us = us_json;
+            
+        us_json.objects.lower48 = {
+            type: "GeometryCollection",
+            geometries: us_json.objects.states.geometries.filter(d => d.id !== "02" && d.id !== "15")
+        };
+        
+        console.log(us);
+
+        response = await fetch('data/walmart.tsv');
+        if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+        
+        const point_data_tsv = await response.text();
+
+        const point_data = d3.tsvParseRows(point_data_tsv) 
+            .slice(1)
+            .map(d => {
+                const p = projection(d);
+                p.date = parseDate(d[2]);
+                return p;
+            })
+            .sort((a, b) => a.date - b.date)
+            
+
+        //console.log(polygon_data);
+        console.log(point_data);
+
+        
+        renderChart(us, point_data);
+
+    });
+    
+</script>
+
+</body>
+</html>
